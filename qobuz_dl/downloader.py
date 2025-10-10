@@ -306,7 +306,8 @@ class Download:
 
 
 def tqdm_download(url, fname, desc):
-    r = requests.get(url, allow_redirects=True, stream=True)
+    headers={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'}
+    r = requests.get(url, allow_redirects=True, stream=True, headers=headers)
     total = int(r.headers.get("content-length", 0))
     download_size = 0
     with open(fname, "wb") as file, tqdm(
