@@ -1,9 +1,6 @@
 import logging
 import os
-import shutil
-import ssl
 import time
-import urllib.request
 from typing import Tuple
 
 import requests
@@ -265,7 +262,6 @@ class Download:
                 requests.exceptions.ConnectionError,
                 requests.exceptions.Timeout,
                 ConnectionError,
-                urllib.error.URLError,
                 OSError,
             ) as e:
                 last_error = e
@@ -364,27 +360,9 @@ class Download:
 
 
 def tqdm_download(url, fname, desc):
-    logger.debug(f"GET {url[:80]}...")
-    # Use urllib.request instead of requests/urllib3 to work around
-    # IncompleteRead issues with Akamai CDN on large FLAC files
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) "
-                          "Gecko/20100101 Firefox/83.0",
-            "Accept-Encoding": "identity",
-        },
-    )
-    ctx = ssl.create_default_context()
-    resp = urllib.request.urlopen(req, timeout=60, context=ctx)
-    total = int(resp.headers.get("Content-Length", 0))
-    logger.debug(
-        f"Response status: {resp.status} | "
-        f"Content-Type: {resp.headers.get('Content-Type')} | "
-        f"Content-Length: {total}"
-    )
+    r = requests.get(url, allow_redirects=True, stream=True, timeout=(10, 60))
+    total = int(r.headers.get("content-length", 0))
     download_size = 0
-    chunk_size = 64 * 1024  # 64KB
     with open(fname, "wb") as file, tqdm(
         total=total,
         unit="iB",
@@ -393,22 +371,11 @@ def tqdm_download(url, fname, desc):
         desc=desc,
         bar_format=CYAN + "{n_fmt}/{total_fmt} /// {desc}",
     ) as bar:
-        while True:
-            chunk = resp.read(chunk_size)
-            if not chunk:
-                break
-            size = file.write(chunk)
+        for data in r.iter_content(chunk_size=1024):
+            size = file.write(data)
             bar.update(size)
             download_size += size
-    resp.close()
-    logger.debug(f"Downloaded {download_size} / {total} bytes for {fname}")
     if download_size < total:
-        if download_size <= 16:
-            try:
-                with open(fname, "rb") as f:
-                    logger.debug(f"First bytes received: {f.read(16)!r}")
-            except Exception:
-                pass
         raise ConnectionError(
             f"Incomplete download ({download_size}/{total} bytes) for {fname}"
         )
