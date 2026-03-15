@@ -1,5 +1,9 @@
 import logging
 import os
+import shutil
+import ssl
+import time
+import urllib.request
 from typing import Tuple
 
 import requests
@@ -118,6 +122,8 @@ class Download:
         media_numbers = [track["media_number"] for track in meta["tracks"]["items"]]
         is_multiple = True if len([*{*media_numbers}]) > 1 else False
         for i in meta["tracks"]["items"]:
+            if count > 0:
+                time.sleep(1)  # brief pause between tracks to avoid CDN rate limiting
             parse = self.client.get_track_url(i["id"], fmt_id=self.quality)
             if "sample" not in parse and parse["sampling_rate"]:
                 is_mp3 = True if int(self.quality) == 5 else False
@@ -231,7 +237,50 @@ class Download:
             logger.info(f"{OFF}{track_title} was already downloaded")
             return
 
-        tqdm_download(url, filename, filename)
+        max_retries = 5
+        last_error = None
+        for attempt in range(max_retries):
+            if attempt > 0:
+                wait = 2 ** attempt  # 2, 4, 8, 16 seconds
+                logger.warning(
+                    f"{YELLOW}Network error, retrying in {wait}s "
+                    f"(attempt {attempt + 1}/{max_retries})..."
+                )
+                time.sleep(wait)
+                if os.path.isfile(filename):
+                    os.remove(filename)
+                # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
+                try:
+                    fresh_url_dict = self.client.get_track_url(
+                        track_metadata["id"], fmt_id=self.quality
+                    )
+                    url = fresh_url_dict["url"]
+                except Exception as url_err:
+                    logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
+            try:
+                tqdm_download(url, filename, filename)
+                break
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                ConnectionError,
+                urllib.error.URLError,
+                OSError,
+            ) as e:
+                last_error = e
+                logger.warning(
+                    f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
+                )
+        else:
+            logger.error(
+                f"{RED}Failed to download {track_title} after {max_retries} "
+                f"attempts (CDN issue). Skipping track..."
+            )
+            if os.path.isfile(filename):
+                os.remove(filename)
+            return
+
         tag_function = metadata.tag_mp3 if is_mp3 else metadata.tag_flac
         try:
             tag_function(
@@ -315,9 +364,27 @@ class Download:
 
 
 def tqdm_download(url, fname, desc):
-    r = requests.get(url, allow_redirects=True, stream=True)
-    total = int(r.headers.get("content-length", 0))
+    logger.debug(f"GET {url[:80]}...")
+    # Use urllib.request instead of requests/urllib3 to work around
+    # IncompleteRead issues with Akamai CDN on large FLAC files
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) "
+                          "Gecko/20100101 Firefox/83.0",
+            "Accept-Encoding": "identity",
+        },
+    )
+    ctx = ssl.create_default_context()
+    resp = urllib.request.urlopen(req, timeout=60, context=ctx)
+    total = int(resp.headers.get("Content-Length", 0))
+    logger.debug(
+        f"Response status: {resp.status} | "
+        f"Content-Type: {resp.headers.get('Content-Type')} | "
+        f"Content-Length: {total}"
+    )
     download_size = 0
+    chunk_size = 64 * 1024  # 64KB
     with open(fname, "wb") as file, tqdm(
         total=total,
         unit="iB",
@@ -326,14 +393,25 @@ def tqdm_download(url, fname, desc):
         desc=desc,
         bar_format=CYAN + "{n_fmt}/{total_fmt} /// {desc}",
     ) as bar:
-        for data in r.iter_content(chunk_size=1024):
-            size = file.write(data)
+        while True:
+            chunk = resp.read(chunk_size)
+            if not chunk:
+                break
+            size = file.write(chunk)
             bar.update(size)
             download_size += size
-
-    if total != download_size:
-        # https://stackoverflow.com/questions/69919912/requests-iter-content-thinks-file-is-complete-but-its-not
-        raise ConnectionError("File download was interrupted for " + fname)
+    resp.close()
+    logger.debug(f"Downloaded {download_size} / {total} bytes for {fname}")
+    if download_size < total:
+        if download_size <= 16:
+            try:
+                with open(fname, "rb") as f:
+                    logger.debug(f"First bytes received: {f.read(16)!r}")
+            except Exception:
+                pass
+        raise ConnectionError(
+            f"Incomplete download ({download_size}/{total} bytes) for {fname}"
+        )
 
 
 def _get_description(item: dict, track_title, multiple=None):
