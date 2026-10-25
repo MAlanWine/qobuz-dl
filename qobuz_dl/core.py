@@ -429,6 +429,9 @@ class QobuzDL:
         # Apparently, last fm API doesn't have a playlist endpoint. If you
         # find out that it has, please fix this!
         try:
+            logger.info(
+                f"{YELLOW}Requesting page 1 of playlist"
+            )
             r = requests.get(playlist_url, timeout=10)
         except requests.exceptions.RequestException as e:
             logger.error(f"{RED}Playlist download failed: {e}")
@@ -436,6 +439,28 @@ class QobuzDL:
         soup = bso(r.content, "html.parser")
         artists = [artist.text for artist in soup.select(ARTISTS_SELECTOR)]
         titles = [title.text for title in soup.select(TITLE_SELECTOR)]
+
+        # Pages (Last.fm shows ~50 items per page; use ?page=N&ajax=1)
+        page = 2
+        while True:
+            sep = "&" if "?" in playlist_url else "?"
+            paged_url = f"{playlist_url}{sep}page={page}&ajax=1"
+            try:
+                logger.info(
+                    f"{YELLOW}Requesting page {page} of playlist"
+                )
+                r_page = requests.get(paged_url, timeout=10)
+                r_page.raise_for_status()
+            except requests.exceptions.RequestException:
+                break
+            soup_page = bso(r_page.content, "html.parser")
+            page_artists = [a.text for a in soup_page.select(ARTISTS_SELECTOR)]
+            page_titles = [t.text for t in soup_page.select(TITLE_SELECTOR)]
+            if not page_artists or not page_titles:
+                break
+            artists.extend(page_artists)
+            titles.extend(page_titles)
+            page += 1
 
         track_list = []
         if len(artists) == len(titles) and artists:
