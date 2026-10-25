@@ -19,6 +19,13 @@ from qobuz_dl.exceptions import (
 from qobuz_dl.color import GREEN, YELLOW
 
 RESET = "Reset your credentials with 'qobuz-dl -r'"
+TOKEN_HOWTO = (
+    "To get your user_auth_token:\n"
+    "  1. Log in at https://play.qobuz.com in your browser.\n"
+    "  2. Open DevTools (F12) -> Console, paste and press Enter:\n"
+    "       JSON.parse(localStorage.getItem('localuser')).user_auth_token\n"
+    "  (Fallback: DevTools -> Network -> user/login -> Response -> user_auth_token)"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +148,8 @@ class Client:
         r = self.session.post(self.base + "user/login", data={"extra": "partner"})
         if r.status_code == 401:
             raise AuthenticationError(
-                "Token expired or invalid. Get a fresh token from your browser:\n"
-                "  DevTools -> Network -> user/login POST -> Response -> user_auth_token\n"
-                "  Then run: qobuz-dl -r  (paste the token as the password)"
+                "Token expired or invalid.\n" + TOKEN_HOWTO + "\n"
+                "Then run 'qobuz-dl -r' and paste the token when asked."
             )
         r.raise_for_status()
         data = r.json()

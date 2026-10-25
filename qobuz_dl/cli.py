@@ -1,5 +1,5 @@
 import configparser
-import hashlib
+import getpass
 import logging
 import glob
 import os
@@ -10,6 +10,7 @@ from qobuz_dl.color import GREEN, RED, YELLOW
 from qobuz_dl.commands import qobuz_dl_args
 from qobuz_dl.core import QobuzDL
 from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK
+from qobuz_dl.qopy import TOKEN_HOWTO
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,10 +30,15 @@ QOBUZ_DB = os.path.join(CONFIG_PATH, "qobuz_dl.db")
 def _reset_config(config_file):
     logging.info(f"{YELLOW}Creating config file: {config_file}")
     config = configparser.ConfigParser()
-    config["DEFAULT"]["email"] = input("Enter your email:\n- ")
-    password = input("Enter your password\n- ")
-    config["DEFAULT"]["password"] = hashlib.md5(
-        password.encode("utf-8")).hexdigest()
+    # Email/password login is gone; the "password" key stores the raw
+    # user_auth_token (refreshed and written back by qopy.Client.auth).
+    print(TOKEN_HOWTO)
+    token = ""
+    while not token:
+        token = getpass.getpass("Paste your user_auth_token (input hidden):\n- ")
+        token = token.strip()
+    config["DEFAULT"]["email"] = ""
+    config["DEFAULT"]["password"] = token
     config["DEFAULT"]["default_folder"] = (
         input("Folder for downloads (leave empty for default 'Qobuz Downloads')\n- ") or
         "Qobuz Downloads"
@@ -120,7 +126,7 @@ def main():
     config.read(CONFIG_FILE)
 
     try:
-        email = config["DEFAULT"]["email"]
+        email = config["DEFAULT"].get("email", "")
         password = config["DEFAULT"]["password"]
         default_folder = config["DEFAULT"]["default_folder"]
         default_limit = config["DEFAULT"]["default_limit"]
@@ -173,7 +179,7 @@ def main():
         arguments.embed_art or embed_art,
         ignore_singles_eps=arguments.albums_only or albums_only,
         no_m3u_for_playlists=arguments.no_m3u or no_m3u,
-        quality_fallback=not arguments.no_fallback or not no_fallback,
+        quality_fallback=not (arguments.no_fallback or no_fallback),
         cover_og_quality=arguments.og_cover or og_cover,
         no_cover=arguments.no_cover or no_cover,
         downloads_db=None if no_database or arguments.no_db else QOBUZ_DB,
