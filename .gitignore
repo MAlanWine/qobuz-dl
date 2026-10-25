@@ -1,2 +1,6 @@
 Qobuz Downloads
 __pycache__
+*.bak
+*.egg-info
+build/
+dist/

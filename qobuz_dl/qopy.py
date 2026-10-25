@@ -32,8 +32,6 @@ class Client:
             {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0",
                 "X-App-Id": self.id,
-                "Content-Type": "application/json;charset=UTF-8"
-
             }
         )
         self.base = "https://www.qobuz.com/api.json/0.2/"
@@ -76,7 +74,6 @@ class Client:
             }
         elif epoint == "favorite/getUserFavorites":
             unix = time.time()
-            # r_sig = "userLibrarygetAlbumsList" + str(unix) + kwargs["sec"]
             r_sig = "favoritegetUserFavorites" + str(unix) + kwargs["sec"]
             r_sig_hashed = hashlib.md5(r_sig.encode("utf-8")).hexdigest()
             params = {
@@ -105,7 +102,12 @@ class Client:
             }
         else:
             params = kwargs
-        r = self.session.get(self.base + epoint, params=params)
+
+        if epoint == "user/login":
+            r = self.session.post(self.base + epoint, data=params)
+        else:
+            r = self.session.get(self.base + epoint, params=params)
+
         if epoint == "user/login":
             if r.status_code == 401:
                 raise AuthenticationError("Invalid credentials.\n" + RESET)
@@ -123,13 +125,33 @@ class Client:
         return r.json()
 
     def auth(self, email, pwd):
-        usr_info = self.api_call("user/login", email=email, pwd=pwd)
-        if not usr_info["user"]["credential"]["parameters"]:
-            raise IneligibleError("Free accounts are not eligible to download tracks.")
-        self.uat = usr_info["user_auth_token"]
+        # Direct API login replaced by OAuth+reCAPTCHA.
+        # pwd holds the current user_auth_token; we refresh it via extra=partner.
+        self.session.headers.update({"X-User-Auth-Token": pwd})
+        r = self.session.post(self.base + "user/login", data={"extra": "partner"})
+        if r.status_code == 401:
+            raise AuthenticationError(
+                "Token expired or invalid. Get a fresh token from your browser:\n"
+                "  DevTools -> Network -> user/login POST -> Response -> user_auth_token\n"
+                "  Then run: qobuz-dl -r  (paste the token as the password)"
+            )
+        r.raise_for_status()
+        data = r.json()
+        self.uat = data["user_auth_token"]
         self.session.headers.update({"X-User-Auth-Token": self.uat})
-        self.label = usr_info["user"]["credential"]["parameters"]["short_label"]
+        self.label = data["user"]["credential"]["parameters"]["short_label"]
         logger.info(f"{GREEN}Membership: {self.label}")
+        # Persist refreshed token back to config
+        import configparser, os
+        config_file = os.path.join(os.environ.get("HOME", ""), ".config", "qobuz-dl", "config.ini")
+        if os.path.exists(config_file):
+            c = configparser.ConfigParser()
+            c.read(config_file)
+            if c["DEFAULT"].get("password") != self.uat:
+                c["DEFAULT"]["password"] = self.uat
+                with open(config_file, "w") as f:
+                    c.write(f)
+                logger.info(f"{GREEN}Token refreshed and saved.")
 
     def multi_meta(self, epoint, key, id, type):
         total = 1
@@ -204,13 +226,10 @@ class Client:
 
     def cfg_setup(self):
         for secret in self.secrets:
-            # Falsy secrets
             if not secret:
                 continue
-
             if self.test_secret(secret):
                 self.sec = secret
                 break
-
         if self.sec is None:
             raise InvalidAppSecretError("Can't find any valid app secret.\n" + RESET)

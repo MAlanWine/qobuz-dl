@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import time
 
 import requests
 from bs4 import BeautifulSoup as bso
@@ -88,24 +89,88 @@ class QobuzDL:
                 "to bypass this."
             )
             return
-        try:
-            dloader = downloader.Download(
-                self.client,
-                item_id,
-                alt_path or self.directory,
-                int(self.quality),
-                self.embed_art,
-                self.ignore_singles_eps,
-                self.quality_fallback,
-                self.cover_og_quality,
-                self.no_cover,
-                self.folder_format,
-                self.track_format,
-            )
-            dloader.download_id_by_type(not album)
-            handle_download_id(self.downloads_db, item_id, add_id=True)
-        except (requests.exceptions.RequestException, NonStreamable) as e:
-            logger.error(f"{RED}Error getting release: {e}. Skipping...")
+        while True:
+            try:
+                dloader = downloader.Download(
+                    self.client,
+                    item_id,
+                    alt_path or self.directory,
+                    int(self.quality),
+                    self.embed_art,
+                    self.ignore_singles_eps,
+                    self.quality_fallback,
+                    self.cover_og_quality,
+                    self.no_cover,
+                    self.folder_format,
+                    self.track_format,
+                )
+                dloader.download_id_by_type(not album)
+                handle_download_id(self.downloads_db, item_id, add_id=True)
+                return
+            except NonStreamable as e:
+                logger.error(f"{RED}Error getting release: {e}. Skipping...")
+                return
+            except requests.exceptions.RequestException as e:
+                logger.error(
+                    f"{RED}Error getting release: {e}. "
+                    f"Will retry in 5 minutes."
+                )
+                self._wait_for_retry()
+                logger.info(f"{YELLOW}Retrying release {item_id}...")
+
+    def _wait_for_retry(self, wait_seconds=300):
+        """Sleep up to ``wait_seconds``, returning early if the user types
+        'y' + Enter on stdin to request an immediate retry."""
+        logger.info(
+            f"{YELLOW}Waiting {wait_seconds // 60} minute(s) before retry. "
+            f"Type 'y' + Enter to retry immediately."
+        )
+        deadline = time.monotonic() + wait_seconds
+        if sys.platform == "win32":
+            self._wait_stdin_windows(deadline)
+        else:
+            self._wait_stdin_unix(deadline)
+
+    @staticmethod
+    def _wait_stdin_unix(deadline):
+        import select
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            ready, _, _ = select.select([sys.stdin], [], [], remaining)
+            if not ready:
+                return
+            line = sys.stdin.readline()
+            if not line:
+                # stdin closed/EOF — sleep out the remainder
+                remaining = deadline - time.monotonic()
+                if remaining > 0:
+                    time.sleep(remaining)
+                return
+            if line.strip().lower() == "y":
+                return
+
+    @staticmethod
+    def _wait_stdin_windows(deadline):
+        import msvcrt
+
+        buf = ""
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if msvcrt.kbhit():
+                ch = msvcrt.getwch()
+                if ch in ("\r", "\n"):
+                    if buf.strip().lower() == "y":
+                        return
+                    buf = ""
+                else:
+                    buf += ch
+            else:
+                time.sleep(0.1)
 
     def handle_url(self, url):
         possibles = {
