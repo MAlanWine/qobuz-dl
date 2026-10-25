@@ -30,7 +30,7 @@ class Client:
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
                 "X-App-Id": self.id,
             }
         )
@@ -237,3 +237,4 @@ class Client:
                 break
         if self.sec is None:
             raise InvalidAppSecretError("Can't find any valid app secret.\n" + RESET)
+
