@@ -53,5 +53,6 @@ The package is a thin orchestration layer over Qobuz's web API. Flow: **CLI args
 ## Notes for working in this code
 
 - This is a personal fork of the unmaintained vitiko98/qobuz-dl. Remotes: `origin` = github.com/MAlanWine/qobuz-dl, `upstream` = vitiko98. Upstream PRs #185, #235, #236, #302, #303, #307, #308 are merged; #326 (downloader CDN retry only) and two date fixes from #331 are cherry-picked. The competing auth PRs (#282, #306, #326-auth, #331-OAuth, #334) were **not** merged — this fork uses its own UAT-refresh auth.
+- [docs/reserve-upstream-prs.md](docs/reserve-upstream-prs.md) holds the **not-merged** upstream work kept for emergencies — notably #306's segmented download (session/start → HKDF session key → AES-unwrapped track key → AES-CTR segment decrypt → ffmpeg remux), to port if `track/getFileUrl` direct downloads stop working. Don't port it proactively.
 - `qobuz_dl/qopy.py.bak` is a backup file checked in — ignore it; the live file is `qopy.py`.
 - The `IneligibleError` exception is defined in [exceptions.py](qobuz_dl/exceptions.py) but no longer raised or imported anywhere.
