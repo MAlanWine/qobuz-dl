@@ -290,38 +290,28 @@ class QobuzDL:
             logger.error(
                 f"{RED}Error : choose type between albums or tracks (default: album)")
             return
+        tracks_directory = os.path.join(self.directory, "Favorite Tracks")
         offset = 0
-        user_favorites = self.client.api_call(
-            "favorite/getUserFavorites", me_type=self.me_type, offset=offset, limit=limit)
-
-        if self.me_type == "albums":
-            urls = []
-            total = user_favorites["albums"]["total"]
-            logger.info(f"{YELLOW}{total} albums liked !")
-            while total > 0:
-                user_favorites = self.client.api_call(
-                    "favorite/getUserFavorites", me_type=self.me_type, offset=offset, limit=limit)
-                for album in user_favorites["albums"]["items"]:
-                    urls.append(album["url"])
-                self.download_list_of_urls(urls)
-                total -= limit
-                offset += 1
-
-        if self.me_type == "tracks":
-            ids = []
-            total = user_favorites["tracks"]["total"]
-            logger.info(f"{YELLOW}{total} tracks liked !")
-            while total > 0:
-                user_favorites = self.client.api_call(
-                    "favorite/getUserFavorites", me_type=self.me_type, offset=offset, limit=limit)
-                for track in user_favorites["tracks"]["items"]:
-                    ids.append(track["id"])
-                for i in ids:
-                    tracks_directory = os.path.join(
-                        self.directory, "Favorite Tracks")
-                    self.download_from_id(i, False, tracks_directory)
-                total -= limit
-                offset += 1
+        total = None
+        while total is None or offset < total:
+            page = self.client.api_call(
+                "favorite/getUserFavorites",
+                me_type=self.me_type,
+                offset=offset,
+                limit=limit,
+            )[self.me_type]
+            if total is None:
+                total = page["total"]
+                logger.info(f"{YELLOW}{total} {self.me_type} liked !")
+            items = page["items"]
+            if not items:
+                break
+            if self.me_type == "albums":
+                self.download_list_of_urls([album["url"] for album in items])
+            else:
+                for track in items:
+                    self.download_from_id(track["id"], False, tracks_directory)
+            offset += limit
 
     def search_by_type(self, query, item_type, limit=10, lucky=False):
         if len(query) < 3:

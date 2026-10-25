@@ -2,15 +2,16 @@
 # of qopy, originally written by Sorrow446. All credits to the
 # original author.
 
+import configparser
 import hashlib
 import logging
+import os
 import time
 
 import requests
 
 from qobuz_dl.exceptions import (
     AuthenticationError,
-    IneligibleError,
     InvalidAppIdError,
     InvalidAppSecretError,
     InvalidQuality,
@@ -20,6 +21,11 @@ from qobuz_dl.color import GREEN, YELLOW
 RESET = "Reset your credentials with 'qobuz-dl -r'"
 
 logger = logging.getLogger(__name__)
+
+if os.name == "nt":
+    _CONFIG_FILE = os.path.join(os.environ.get("APPDATA", ""), "qobuz-dl", "config.ini")
+else:
+    _CONFIG_FILE = os.path.join(os.environ["HOME"], ".config", "qobuz-dl", "config.ini")
 
 
 class Client:
@@ -146,14 +152,12 @@ class Client:
         self.label = data["user"]["credential"]["parameters"]["short_label"]
         logger.info(f"{GREEN}Membership: {self.label}")
         # Persist refreshed token back to config
-        import configparser, os
-        config_file = os.path.join(os.environ.get("HOME", ""), ".config", "qobuz-dl", "config.ini")
-        if os.path.exists(config_file):
+        if os.path.exists(_CONFIG_FILE):
             c = configparser.ConfigParser()
-            c.read(config_file)
+            c.read(_CONFIG_FILE)
             if c["DEFAULT"].get("password") != self.uat:
                 c["DEFAULT"]["password"] = self.uat
-                with open(config_file, "w") as f:
+                with open(_CONFIG_FILE, "w") as f:
                     c.write(f)
                 logger.info(f"{GREEN}Token refreshed and saved.")
 
@@ -237,4 +241,3 @@ class Client:
                 break
         if self.sec is None:
             raise InvalidAppSecretError("Can't find any valid app secret.\n" + RESET)
-

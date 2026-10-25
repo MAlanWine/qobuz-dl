@@ -235,7 +235,6 @@ class Download:
             return
 
         max_retries = 5
-        last_error = None
         for attempt in range(max_retries):
             if attempt > 0:
                 wait = 2 ** attempt  # 2, 4, 8, 16 seconds
@@ -264,7 +263,6 @@ class Download:
                 ConnectionError,
                 OSError,
             ) as e:
-                last_error = e
                 logger.warning(
                     f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
                 )
